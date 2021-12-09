@@ -1,6 +1,10 @@
 import serial,time,struct,base64,time,websocket,json
-
+from subprocess import Popen
 import _thread
+
+
+STATION_PORT = "COM20"
+TELEMETRY_PORT = "COM17"
 
 STARTBIT = (0x55)
 ENDBIT = (0x2e)
@@ -8,8 +12,8 @@ PACKETSIZE = struct.calcsize('iiiiiiiiiii')
 
 
 
-SERIAL_PORT = serial.Serial(
-    port="COM6",
+SERIAL_PORT_STATION = serial.Serial(
+    port=STATION_PORT,
     baudrate=115200,
     bytesize=serial.EIGHTBITS,
     parity=serial.PARITY_NONE,
@@ -17,56 +21,47 @@ SERIAL_PORT = serial.Serial(
     timeout=0.1, 
 )
 
-time.sleep(1)
-
+time.sleep(2)
 
 def write_serial(unpack):
-    print('upload command')
-    print(unpack)
-    print(type(unpack))
-    # print("write Serial")
     values = bytearray([unpack[0], unpack[1], unpack[2], unpack[3], unpack[4]])
-    # STARTBIT = (0x55)
-    SERIAL_PORT.write(STARTBIT.to_bytes(1, byteorder='big'))
-    SERIAL_PORT.write(values[0].to_bytes(1, byteorder='big'))
-    SERIAL_PORT.write(values[1].to_bytes(1, byteorder='big'))
-    SERIAL_PORT.write(values[2].to_bytes(1, byteorder='big'))
-    SERIAL_PORT.write(values[3].to_bytes(1, byteorder='big'))
-    SERIAL_PORT.write(values[4].to_bytes(1, byteorder='big'))
-    SERIAL_PORT.write(ENDBIT.to_bytes(1, byteorder='big')) 
+
+    if unpack[3] == 7:
+        print("-----------------TURN ON UAV-----------------")
+        Popen(["python", "./telemetry.py",'--action','ON_UAV','--port',TELEMETRY_PORT])
+    elif unpack[3] == 8:
+        print("-----------------TURN OFF UAV-----------------")
+        Popen(["python", "./telemetry.py",'--action','OFF_UAV','--port',TELEMETRY_PORT])
+        time.sleep(0.01)
+    else:
+        print('-------Upload STATION Command-------')
+        for i in range(20):
+            SERIAL_PORT_STATION.write(STARTBIT.to_bytes(1, byteorder='big'))
+            SERIAL_PORT_STATION.write(values[0].to_bytes(1, byteorder='big'))
+            SERIAL_PORT_STATION.write(values[1].to_bytes(1, byteorder='big'))
+            SERIAL_PORT_STATION.write(values[2].to_bytes(1, byteorder='big'))
+            SERIAL_PORT_STATION.write(values[3].to_bytes(1, byteorder='big'))
+            SERIAL_PORT_STATION.write(values[4].to_bytes(1, byteorder='big'))
+            SERIAL_PORT_STATION.write(ENDBIT.to_bytes(1, byteorder='big')) 
 
 def read_serial():
-    # print("Read Serial")
-    datas = SERIAL_PORT.read()
+    datas = SERIAL_PORT_STATION.read()
     for i in datas:
         if i == STARTBIT:
-            data = SERIAL_PORT.read(PACKETSIZE)
+            data = SERIAL_PORT_STATION.read(PACKETSIZE)
             payload = base64.b64encode(data).decode('ascii')
-            print(len(data))
             return payload
 
-
-
-
-
 def on_message(ws, message):
-    # pass
     data = json.loads(message)
     if data['type']== 'uav':
         print('--------Command------')
         payload = data['bin']
         packet = base64.b64decode(payload)
-        # unpack = struct.unpack('iiiiiiiiiii',packet)
         unpack = struct.unpack('iiiii',packet)
-        # print(unpack)
-        # print(type(unpack))
         write_serial(unpack)
-
-
     if data['type']== 'station':
         print('Command')
-
-
 
 def on_error(ws, error):
     print(error)
